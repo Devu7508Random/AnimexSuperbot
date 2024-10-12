@@ -1,0 +1,103 @@
+import os
+import sqlite3
+import requests
+import logging
+from pyrogram import Client, filters
+from pyrogram.errors import BadRequest
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize the bot with your API credentials
+app = Client("my_bot", api_id="YOUR_API_ID", api_hash="YOUR_API_HASH", bot_token="YOUR_BOT_TOKEN")
+
+# Database connection and setup
+conn = sqlite3.connect("user_data.db")
+cursor = conn.cursor()
+
+# Create a table for user preferences if it doesn't exist
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id INTEGER PRIMARY KEY,
+        favorite_anime TEXT,
+        favorite_song TEXT
+    )
+''')
+conn.commit()
+
+ANILIST_API_URL = "https://graphql.anilist.co"
+
+def get_anime_details(anime_name):
+    query = '''
+    query ($search: String) {
+        Media (search: $search, type: ANIME) {
+            title {
+                romaji
+                english
+            }
+            description
+            episodes
+            genres
+        }
+    }
+    '''
+    variables = {'search': anime_name}
+    response = requests.post(ANILIST_API_URL, json={'query': query, 'variables': variables})
+
+    if response.status_code == 200:
+        return response.json()['data']['Media']
+    else:
+        return None
+
+@app.on_errors()
+async def error_handler(client, message, error):
+    if isinstance(error, BadRequest):
+        await message.reply_text("Oops, there was an issue with your request!")
+    else:
+        await message.reply_text(f"An unexpected error occurred: {error}")
+    logger.error(f"Error occurred: {error}")
+
+@app.on_message(filters.command("setfavoriteanime"))
+async def set_favorite_anime(client, message):
+    user_id = message.from_user.id
+    anime_name = message.text.split(maxsplit=1)[1]
+
+    cursor.execute('REPLACE INTO user_preferences (user_id, favorite_anime) VALUES (?, ?)', (user_id, anime_name))
+    conn.commit()
+
+    await message.reply_text(f"Your favorite anime '{anime_name}' has been saved!")
+
+@app.on_message(filters.command("getfavoriteanime"))
+async def get_favorite_anime(client, message):
+    user_id = message.from_user.id
+
+    cursor.execute('SELECT favorite_anime FROM user_preferences WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+
+    if result:
+        await message.reply_text(f"Your favorite anime is {result[0]}")
+    else:
+        await message.reply_text("You haven't set a favorite anime yet.")
+
+@app.on_message(filters.command("animesearch"))
+async def anime_search(client, message):
+    try:
+        anime_name = message.text.split(maxsplit=1)[1]
+        anime_info = get_anime_details(anime_name)
+
+        if anime_info:
+            response_message = f"**{anime_info['title']['romaji']}**\n" \
+                               f"**English Title:** {anime_info['title']['english']}\n" \
+                               f"**Episodes:** {anime_info['episodes']}\n" \
+                               f"**Genres:** {', '.join(anime_info['genres'])}\n\n" \
+                               f"**Description:** {anime_info['description']}"
+            await message.reply_text(response_message, parse_mode="markdown")
+        else:
+            await message.reply_text("Sorry, I couldn't find any details for that anime.")
+    except Exception as e:
+        await message.reply_text("There was an error processing your request.")
+        logger.error(f"Error in animesearch command: {e}")
+
+# Start the bot
+app.run()
