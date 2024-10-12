@@ -1,0 +1,33 @@
+{
+  "name": "Anime Music Bot",
+  "description": "A Telegram bot for anime music and information.",
+  "keywords": ["telegram", "bot", "anime", "music"],
+  "env": {
+    "API_ID": {
+      "description": "Your Telegram API ID",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Your Telegram API Hash",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Your Telegram Bot Token",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "scripts": {
+    "postdeploy": "python bot.py"
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "free"
+    }
+  }
+}
